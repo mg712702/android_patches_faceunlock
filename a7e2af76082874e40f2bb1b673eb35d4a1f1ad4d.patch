@@ -1,0 +1,81 @@
+From a7e2af76082874e40f2bb1b673eb35d4a1f1ad4d Mon Sep 17 00:00:00 2001
+From: Alexander Shumilov <razziell@ya.ru>
+Date: Fri, 1 May 2020 15:00:31 +0300
+Subject: [PATCH] SystemUI: Allow listening for face only on pin/pass view
+ (#422)
+
+Useful for devices with popup camera
+
+Change-Id: Ifba770dd1681858844d5d0290cbf385bfa47f841
+
+Co-authored-by: jhenrique09 <jhenrique09.mcz@hotmail.com>
+---
+ packages/SystemUI/res/values/cr_config.xml          |  3 +++
+ .../com/android/keyguard/KeyguardUpdateMonitor.java | 13 +++++++++++--
+ 2 files changed, 14 insertions(+), 2 deletions(-)
+
+diff --git a/packages/SystemUI/res/values/cr_config.xml b/packages/SystemUI/res/values/cr_config.xml
+index d4d9b98edefc..92c3eca2c0f4 100644
+--- a/packages/SystemUI/res/values/cr_config.xml
++++ b/packages/SystemUI/res/values/cr_config.xml
+@@ -45,6 +45,9 @@
+     <!-- FPSInfoService FPS node file path -->
+     <string name="config_fpsInfoSysNode" translatable="false"></string>
+ 
++    <!-- Enable face auth only when swiping security view -->
++    <bool name="config_faceAuthOnlyOnSecurityView">false</bool>
++
+     <!-- Default no. of QS tile rows and columns -->
+     <integer name="config_qs_columns_portrait">4</integer>
+     <integer name="config_qs_rows_portrait">2</integer>
+diff --git a/packages/SystemUI/src/com/android/keyguard/KeyguardUpdateMonitor.java b/packages/SystemUI/src/com/android/keyguard/KeyguardUpdateMonitor.java
+index 9c854390187d..ae74d7475a72 100644
+--- a/packages/SystemUI/src/com/android/keyguard/KeyguardUpdateMonitor.java
++++ b/packages/SystemUI/src/com/android/keyguard/KeyguardUpdateMonitor.java
+@@ -267,6 +267,7 @@
+     private boolean mLockIconPressed;
+ 
+     private final boolean mFingerprintWakeAndUnlock;
++    private final boolean mFaceAuthOnlyOnSecurityView;
+ 
+     /**
+      * Short delay before restarting biometric authentication after a successful try
+@@ -1547,6 +1548,8 @@ protected KeyguardUpdateMonitor(Context context) {
+         mStrongAuthTracker = new StrongAuthTracker(context, this::notifyStrongAuthStateChanged);
+         mFingerprintWakeAndUnlock = mContext.getResources().getBoolean(
+                 com.android.systemui.R.bool.config_fingerprintWakeAndUnlock);
++        mFaceAuthOnlyOnSecurityView = mContext.getResources().getBoolean(
++                com.android.systemui.R.bool.config_faceAuthOnlyOnSecurityView);
+ 
+         // Since device can't be un-provisioned, we only need to register a content observer
+         // to update mDeviceProvisioned when we are...
+@@ -1762,7 +1765,7 @@ private boolean shouldListenForFingerprint() {
+      * If face auth is allows to scan on this exact moment.
+      */
+     public boolean shouldListenForFace() {
+-        final boolean awakeKeyguard = mKeyguardIsVisible && mDeviceInteractive && !mGoingToSleep;
++        boolean awakeKeyguard = mKeyguardIsVisible && mDeviceInteractive && !mGoingToSleep;
+         final int user = getCurrentUser();
+         final int strongAuth = mStrongAuthTracker.getStrongAuthForUser(user);
+         final boolean isLockOutOrLockDown =
+@@ -1785,13 +1788,19 @@ public boolean shouldListenForFace() {
+         boolean strongAuthAllowsScanning = (!isEncryptedOrTimedOut || canBypass && !mBouncer)
+                 && !isLockOutOrLockDown;
+ 
++        boolean unlockPossible = true;
++        if ((!mBouncer || !awakeKeyguard) && mFaceAuthOnlyOnSecurityView){
++            unlockPossible = false;
++        }
++
+         // Only listen if this KeyguardUpdateMonitor belongs to the primary user. There is an
+         // instance of KeyguardUpdateMonitor for each user but KeyguardUpdateMonitor is user-aware.
+         return (mBouncer || mAuthInterruptActive || awakeKeyguard || shouldListenForFaceAssistant())
+                 && !mSwitchingUser && !isFaceDisabled(user) && becauseCannotSkipBouncer
+                 && !mKeyguardGoingAway && mFaceSettingEnabledForUser.get(user) && !mLockIconPressed
+                 && strongAuthAllowsScanning && mIsPrimaryUser
+-                && !mSecureCameraLaunched;
++                && !mSecureCameraLaunched
++                && unlockPossible;
+     }
+ 
+     /**
